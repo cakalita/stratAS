@@ -1,14 +1,14 @@
 ```
 #just run for DPF3
 Rscript stratas_DeCAF.R \
---input example/KIRC.ALL.AS.chr14.OUT.MAT.split \
---global_param example/KIRC.ALL.AS.global.params \
+--input example/mat_DPF3.OUT.MAT.SPLIT \
+--global_param example/KIRC.ALL.AS.01A.nona.global.params \
 --local_param example/KIRC.ALL.AS.CNVLOCAL \
---peaks example/knownGene_withAlias.stratas.txt \
+--peaks example/knownGene_withAlias_withgencode.chr14.txt \
 --cell_specific TRUE \
 --cell_pop example/KIRC_TIMER.txt \
 --pheno FALSE \
---gene_express example/KIRC.rnaseq.fixedsamples.txt \
+--gene_express example/KIRC.rnaseq.fixedsamples_full.txt \
 --bbreg TRUE \
 --data_path example/stratas_results/ \
 --sample_name KIRC.ALL.AS.chr14.DPF3 \
