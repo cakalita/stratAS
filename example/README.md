@@ -8,7 +8,7 @@ Rscript stratas_DeCAF.R \
 --cell_specific TRUE \
 --cell_pop example/KIRC_TIMER.txt \
 --pheno FALSE \
---gene_express example/KIRC.rnaseq.fixedsamples_full.txt \
+--gene_express example/gene_express_DPF3.txt \
 --bbreg TRUE \
 --data_path example/stratas_results/ \
 --sample_name KIRC.ALL.AS.chr14.DPF3 \
