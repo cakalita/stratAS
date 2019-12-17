@@ -108,6 +108,11 @@ cnv.all = read.table( opt$global_param , head=T ,as.is=T)
 #cnv.all.both = read.table( opt$global_param , head=T ,as.is=T)
 #cnv.all = cnv.all.both[grep("*[-]01A",cnv.all.both$ID),]
 #the following is just until params
+#samples file contains one sample ID per line 
+#bcftools query -l KIRC.ALL.AS.merged.fixed.vcf.gz > samples_KIRC.ALL.AS.merged.fixed.full.txt
+#next line subsets tumor samples from TCGA
+#less samples_KIRC.ALL.AS.merged.fixed.full.txt | grep '.*01A$' > samples_KIRC.ALL.AS.merged.fixed.01A.txt
+
 samples <- fread("../../agusevlab/ckal/TCGA_vcf/KIRC/stratas_prep_files/samples_KIRC.ALL.AS.merged.fixed.01A.txt", header=F)
 cnv.all <- cnv.all[cnv.all$ID %in% samples$V1,]
 
