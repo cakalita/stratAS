@@ -24,54 +24,60 @@ Allele specific analyses across cell states and conditions
 
 A vcf file containing one individual is converted to counts as follows:
 ```
-zcat $VCF \
-| grep -v '#' \
-| cut -f 1,2,10 \
-| tr ':' '\t' \
-| awk '$3 != "1|1" && $3 != "0|0"' \
-| cut -f 1-3,7 \
-| tr ',' '\t' \
-| sed 's/chr//' \
-| awk 'BEGIN { print "CHR POS HAP REF.READS ALT.READS" } $4 + $5 > 0' \
- > $OUT.counts
+bcftools query -f '%CHROM\t%END\t%ID\t%REF[\t%SAMPLE\t%GT\t%AS]\n' KIRC.ALL.AS.filtered_01A.vcf.gz | tr ',' '\t' > KIRC.ALL.AS.01A.counts
 ```
 
 For tumor data, local CNV-specific parameters are also estimated, and the `--inp_cnv` file must be provided with headers `CHR P0 P1` listing the boundaries of CNV regions. This file can additionally contain a `CNV` column listing the CNV estimate (centered to zero as in TCGA calls) for inclusion as a covariate in the final analysis.
 
 inference is then performed by running:
 ```
-Rscript params.R --min_cov 5 --inp_counts $OUT.counts --inp_cnv $CNV --out $OUT
+sbatch --job-name=params --export=SAMPLE="KIRC.ALL.AS.01A",DATA="../../agusevlab/ckal/TCGA_vcf/KIRC" slurm_src/stratas_params_CGC.sh 
+```
+Where the content looks like:
+```
+Rscript slurm_src/params_new.R \
+--min_cov 5 \
+--inp_counts ${DATA}/stratas_prep_files/${SAMPLE}.counts \
+--out ${DATA}/stratas_input_files/${SAMPLE}
+#--inp_cnv ${DATA}/CNV/${LOCAL} \
+```
+Uncomment --inp_cnv when calculating local CNV. Then remove NA from the params file which can cause issues in the stratas run.
+```
+less ${DATA}/stratas_input_files/${SAMPLE}.global.params | awk -v OFS='\t' '$1 != "NA"' > ${DATA}/stratas_input_files/${SAMPLE}.nona.global.params
+
 ```
 
-A `$OUT.global.params` file is generated containing the parameters (with header `PHI MU N`) and (optionally) an `$OUT.local.params` file is generated containing the positions and parameters for each CNV (with header `CHR P0 P1 PHI MU N`).
+A `$OUT.global.params` file is generated containing the parameters (with header `PHI MU N`) and (optionally) an `$OUT.local.params` file is generated containing the positions and parameters for each CNV (with header `ID CHR P0 P1 PHI MU N`).
 
 ### `stratas.R` : testing for differential AS
 
 `stratas.R` computes the AS statistics from a VCF of all individuals and the prior parameters estimated above.
 
-A vcf file containing all individuals is converted to counts and split into batches as follows:
+To split gene/peak file into chromosomes, and then into smaller sets:
 ```
-zcat $VCF\
-| grep -v '#' \
-| cut -f 1-5,9- \
-| tr ':' '\t' \
-| awk '{ for(i=1;i<=5;i++) { printf "%s ",$i; } for(i=6;i<=10;i++) { if($i == "GT") gtnum=i-6; if($i=="AS") asnum=i-6; } for(i=11;i<=NF;i++) { if( (i-11) % 5 == asnum || (i-11) % 5 == gtnum ) printf " %s",$i; } print ""; }' \
-| sed 's/[|,]/ /g' | split -d -l 15000 - $OUT.MAT.split.
+awk -v OFS='\t' '{print > ("../knownGene_withAlias_withgencode."$1".txt")}' ../knownGene_withAlias_withgencode.txt
+
+for chr in {1..22}; do 
+split -d -l 100 ../knownGene_withAlias_withgencode.chr${chr}.txt knownGene_withAlias_withgencode.chr${chr}.
+done
+```
+
+A vcf file containing all individuals is converted to counts and split into chromosomes as follows:
+```
+bcftools query -f '%CHROM\t%END\t%ID\t%REF\t%ALT[\t%GT\t%AS]\n' KIRC.ALL.AS.filtered_01A.vcf.gz | tr ',' '\t' | sed 's/[|,]/\t/g' | sed 1d > ../stratas_input_files/KIRC.ALL.AS.01A.OUT.MAT.split
+awk -v OFS='\t' -v var="KIRC.ALL.AS.01A" '{print > (var"."$1".OUT.MAT.split")}' KIRC.ALL.AS.01A.OUT.MAT.split
 ```
 
 Each batch is then processed as follows:
 ```
-Rscript stratas.R \
---input $OUT.MAT.split.00 \
---samples SAMPLES.ID \
---peaks gencode.protein_coding.transcripts.bed \
---global_param GLOBAL.params \
---local_param LOCAL.params \
+for gene_set in ../../agusevlab/LNCaP/split_gene/*chr*+([0-9]); do
+  sbatch --job-name=${gene_set} --export=BINOM="TRUE",LOCAL="KIRC.ALL.AS.CNVLOCAL",GLOBAL="KIRC.ALL.AS.nona.global.params",SAMPLE="KIRC.ALL.AS.01A",DATA="../../agusevlab/ckal/TCGA_vcf/KIRC",PEAK="LNCaP/split_gene/${gene_set}",GENE_SET="${gene_set}",CELL="../../agusevlab/ckal/AIsim/KIRC_TIMER.txt",OUT="batch2/",EXPRESS="broad_rnaseq/KIRC.rnaseq.fixedsamples.full.txt" slurm_src/batch_decaf.sh 
+  sleep 1
+done
 ```
-
 ### Output data
 
-By default, the ASE test is printed to screen with each line containing the following entries:
+By default, the ASE test is printed to file testtype_stratas_results.txt with each line containing the following entries:
 
 | Column | Description |
 | --- | --- |
@@ -84,6 +90,46 @@ By default, the ASE test is printed to screen with each line containing the foll
 | CENTER | Center position of peak (or TSS for gene) |
 | N.HET | # of heterozygous individuals tested |
 | N.READS | # of reads tested in total |
+
+Then additional columns depending on the test type choice/s made. 
+For -betabinom
+| Column | Description |
+| --- | --- |
+| ALL.AF | Allelic fraction estimate from standard beta binomial test |
+| ALL.BBINOM.P | Beta-binomial test for imbalance across both conditions  |
+| SAMPLE_NAME | Name of the Sample |
+
+For -bbreg 
+| Column | Description |
+| --- | --- |
+| z | z score from beta binomial test that includes CNV as a covariate |
+| pv | p value from beta binomial test that includes CNV as a covariate |
+| SAMPLE_NAME | Name of the Sample |
+
+For -cell_specific you get 2 files. eqtl results were added for DeCAF, so they are currently only output when this flag is true although cell pop data is not input.
+
+eqtl_vanilla results:
+| Column | Description |
+| --- | --- |
+| z_eqtl_vanilla | z score from eqtl interaction test that includes CNV |
+| eqtl_pval_vanilla | p value from eqtl interaction test that includes CNV |
+| SAMPLE_NAME | Name of the Sample |
+
+DeCAF results:
+| Column | Description |
+| --- | --- |
+| z_eqtl | z score from eqtl interaction test that includes CNV and cell fraction |
+| z_eqtl_pval | p value from eqtl interaction test that includes CNV and cell fraction |
+| z_AI | z score from bbreg betabinomial interaction test that includes CNV and cell fraction |
+| z_AI_pval | p value from bbreg betabinomial interaction test that includes CNV and cell fraction |
+| c | number of tests with non-NA results (used for Stouffer's combination calculation) |
+| z_comb | z score from combining eqtl and bbreg betabinomial tests with Stouffer's method |
+| z_comb_pval | p value from combining eqtl and bbreg betabinomial tests with Stouffer's method |
+| sample | Name of the Sample |
+
+For -pheno and -betabinom
+| Column | Description |
+| --- | --- |
 | ALL.AF | Allelic fraction estimate from beta binomial test across both conditions |
 | ALL.BBINOM.P | Beta-binomial test for imbalance across both conditions  |
 | C0.AF | Allelic fraction estimate from condition 0 |
@@ -93,7 +139,6 @@ By default, the ASE test is printed to screen with each line containing the foll
 | DIFF.BBINOM.P | Beta-binomial test for difference between conditions |
 
 Enabling the `--binom` flag additionally runs a standard binomial test, and produces the following columns:
-
 | Column | Description |
 | --- | --- |
 | ALL.BINOM.P | Binomial test for imbalance across both conditions|
@@ -102,8 +147,7 @@ Enabling the `--binom` flag additionally runs a standard binomial test, and prod
 | FISHER.OR | Fisher's test odd's ratio for difference between conditions|
 | FISHER.DIFF.P | Fisher's test difference between conditions |
 
-Enabling the `--bbreg` flag additionally runs a beta binomial regression with CNV as covariate, and produces the following columns:
-
+Enabling the -pheno and --bbreg flag runs a beta binomial regression with CNV as covariate, and produces the following columns:
 | Column | Description |
 | --- | --- |
 | ALL.BBREG.P | Beta binomial regression (with covariates) for imbalance across both conditions |
@@ -111,7 +155,6 @@ Enabling the `--bbreg` flag additionally runs a beta binomial regression with CN
 | CNV.BBREG.P | Beta binomial regression (with covariates) for imbalance along CNV covariate |
 
 Enabling the `--indiv` flag additionally produces the following columns:
-
 | Column | Description |
 | --- | --- |
 | IND.C0 | Number of each condition 0 individual included in this test (comma separated) |
@@ -127,7 +170,7 @@ An example locus with significant AS associations can be run by calling:
 
 ```
 Rscript stratas.R \
---input example/ENSG00000075240.12.mat \
+--input example/mat_DPF3.OUT.MAT.SPLIT \
 --samples example/KIRC.ALL.AS.PHE \
 --peaks example/ENSG00000075240.12.bed \
 --global_param example/KIRC.ALL.AS.CNV \
@@ -154,6 +197,15 @@ Rscript stratas.R \
 | `--bbreg` | Also perform a beta binomial regression with local CNV status as a covariate (must also provide `--local_param` file) |
 | `--indiv` | Also report the per-individual allele fractions (Warning, this can produce large files) |
 | `--exclude` | The mimium distance between SNPs allowed in the haplotype (to exclude variants in the same read) |
+| `--gene_express` | Path to input file containing gene expression results needed for cell-type specific QTL testing |
+| `--sample_name` | Name of library being analyzed |
+| `--gene_name` | Name of gene being analyzed |
+| `--cell_pop` | Path to file containing cell population fractions, row per individual, columns per cell type |
+| `--out` | Path to output |
+| `--cell_specific` | Perform cell-type specific ASE/QTL test |
+| `--data_path` | Set output data path to store results |
+| `--pheno` | Preforms liklihood ratio test for chisq results between conditions. Curently binary only |
+| `--betabinom` | Perform a standard beta-binomial test without LRT |
 
 ## Notes:
 
