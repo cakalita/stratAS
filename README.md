@@ -1,6 +1,6 @@
-# :first_quarter_moon: stratAS
+# :first_quarter_moon: DeCAF(DEconvoluted Cell type Allele specific Function)
 
-Allele specific analyses across cell states and conditions
+Identify cell-type specific QTL effects in tumors by leveraging both allelic and total expression information
 
 ## Workflow
 
@@ -170,12 +170,21 @@ Enabling the `--indiv` flag additionally produces the following columns:
 An example locus with significant AS associations can be run by calling:
 
 ```
+#just run for DPF3
 Rscript stratas_DeCAF.R \
 --input example/mat_DPF3.OUT.MAT.SPLIT \
---samples example/KIRC.ALL.AS.PHE \
---peaks example/ENSG00000075240.12.bed \
---global_param example/KIRC.ALL.AS.CNV \
---local_param=example/KIRC.ALL.AS.CNVLOCAL
+--global_param example/KIRC.ALL.AS.01A.nona.global.params \
+--local_param example/KIRC.ALL.AS.CNVLOCAL \
+--peaks example/knownGene_withAlias_withgencode.chr14.txt \
+--cell_specific TRUE \
+--cell_pop example/KIRC_TIMER.txt \
+--pheno FALSE \
+--gene_express example/gene_express_DPF3.txt \
+--bbreg TRUE \
+--data_path example/stratas_results/ \
+--sample_name KIRC.ALL.AS.chr14.DPF3 \
+--betabinom TRUE \
+--gene_name DPF3
 ```
 ## Detailed Parameters
 
