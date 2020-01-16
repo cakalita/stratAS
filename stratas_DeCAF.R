@@ -313,11 +313,12 @@ peaks = peaks[peaks$NAME==GENE_NAME,]
 gene = gene[gene$NAME==GENE_NAME,]
 }
 for ( p in 1:nrow(peaks) ) {
-#peak_list <- mclapply(1:nrow(peaks), function(p) {
+	message(paste0("Running ", p))
 	#p=1
 	#browser()
 	if (DO.CELLSPECIFIC) {
 		Y.total = gene[p,-c(1:5)]
+		message(paste0("Running ", p, "=", gene[p,"NAME"]))
 	}
 	
 	#cur_peak <- subset(mat, V1==peaks$CHR[p])
@@ -393,6 +394,7 @@ for ( p in 1:nrow(peaks) ) {
 				df_ind <- cbind(paste(CUR.IND,collapse=',') , paste(CUR.REF,collapse=',') , paste(CUR.ALT,collapse=',') , paste(CUR.ID,collapse=','))
 				df_info <- cbind(mat[s,1:3] , peaks[p,c("P0","P1","NAME","CENTER")] , sum(HET) , sum(CUR.REF) + sum(CUR.ALT))
 		          	colnames(df_info) <- COL.HEADER				
+				
 				if (DO.CELLSPECIFIC) {
 				SNP_geno=GENO.H1[s,] + GENO.H2[s,]
 				#cell_pop_sub1=subset(cell_pop, sample_ID %in% IDS)
@@ -425,7 +427,9 @@ for ( p in 1:nrow(peaks) ) {
 				df <- cbind(df_info, z_eqtl)
     				return(df)})
 				z_eqtl_df <- ldply(eqtl_list, data.frame)
+				#message(paste0(s,": eqtl test finished"))
  				}	
+
 			if ( sum(HET) > MIN.HET*N ) {
 
 				if ( sum(CUR.REF) + sum(CUR.ALT) > 0 ) {
@@ -539,6 +543,7 @@ for ( p in 1:nrow(peaks) ) {
 							df <- tryCatch(cbind(df_info , tst.bbinom.ALL$min , tst.bbinom.ALL$pv , SAMPLE_NAME), error=function(e) data.frame(df_info,AF=tst.bbinom.ALL$min,pval=tst.bbinom.ALL$pv,SAMPLE_NAME))
 							colnames(df) <- HEAD
 							write.table(df, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".bbinom_stratas_results.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".bbinom_stratas_results.txt") )
+							#message(paste0(s,": beta.binom test finished"))
 						# --- print individual counts
 							if ( DO.INDIV ) {
 								HEAD = c(HEAD,COL.HEADER.INDIV)
@@ -556,24 +561,12 @@ for ( p in 1:nrow(peaks) ) {
 							tst.bbreg.vanilla_res = tryCatch(as.data.frame(tst.bbreg.vanilla)["(Intercept)",c(2,1)], error=function(e) data.frame(z_AI=NA,z_AI_pval=NA))
 							df <- tryCatch(cbind(df_info, tst.bbreg.vanilla_res , SAMPLE_NAME), error=function(e) data.frame(df_info,z_AI=NA,z_AI_pval=NA,SAMPLE_NAME))
 							write.table(df, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".bbreg_vanilla_stratas_results.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".bbreg_vanilla_stratas_results.txt") )
+							#message(paste0(s,": bbreg vanilla test finished"))
 						}
 						if (DO.CELLSPECIFIC) {
 							all.COVAR = COVAR[CUR.IND] 
 							#all.COVAR[is.na(all.COVAR)] <- 0
 							all.RHO = RHO[CUR.IND]
-							#AI_list <- mclapply(cell_types, function(c){
-						#		#c=cell_types[1]
-	       					#		cf0_L <- cell_pop_sub1[, ..c]
-						#		cf0 <- unname(unlist(cf0_L))
-						#		all.cf0 = cf0[CUR.IND]
-    						#	reg <- tryCatch(VGAM::vglm(cbind(CUR.REF,CUR.ALT) ~ all.cf0, betabinomial, irho=mean(all.RHO,na.rm=T), trace = FALSE), error=function(e) NA)
-   						#		reg_res = tryCatch(as.data.frame(t(coef(summaryvglm(reg))["all.cf0",c(3,4)])), error=function(e) data.frame(z_AI=NA,z_AI_pval=NA))
-   						#		colnames(reg_res) <- c("z_AI","z_AI_pval")
-   						#		z_AI = data.frame(cell=c, z_AI=reg_res$z_AI,z_AI_pval=reg_res$z_AI_pval)
-						#		df <- cbind(df_info[c("RSID")], z_AI)
-    						#return(df)})
-						#	z_AI_df <- ldply(AI_list, data.frame)
-
 								if ( DO.BBREG ) {
 									BBREG_list <- mclapply(cell_types, function(c){
 										#c=cell_types[1]
@@ -593,11 +586,13 @@ for ( p in 1:nrow(peaks) ) {
 									z_BBREG_df <- ldply(BBREG_list, data.frame)
 									#for QC while running uncomment
 									#cat("BBREGtest",z_BBREG_df$z_AI, z_BBREG_df$z_AI_pval, '\n' , sep='\t' )
+									#message(paste0(s,": bbreg test finished"))
    								}
    						}
    					}
 				}
 			}
+			
 			if (DO.CELLSPECIFIC) {
 			if (DO.BBREG) {
 			#z_BBREG_df <- tryCatch(data.frame(z_BBREG_df), error=function(e) data.frame(RSID=paste(df_info$RSID), z_AI=NA,z_AI_pval=NA,cell=NA))
@@ -626,6 +621,7 @@ for ( p in 1:nrow(peaks) ) {
 			#for QC while running uncomment
 			#cat("sumQ",sumQ$z_AI, sumQ$z_AI_pval, '\n' , sep='\t' )
 			write.table(sumQ, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results_new.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results.txt") )
+			#message(paste0(s,": decaf test finished"))
 												# --- print individual counts
 				if ( DO.INDIV ) {
 				colnames(df_ind) <- COL.HEADER.INDIV
@@ -634,14 +630,25 @@ for ( p in 1:nrow(peaks) ) {
 				}
 			}
 			}
-		if (DO.CELLSPECIFIC & DO.BBREG)	return(sumQ)
 		})
 	}
 }
-#if (DO.CELLSPECIFIC & DO.BBREG) {
-#snps_df <- ldply(snp_list, data.frame)
-#write.table(snps_df, quote=F , row.names=F , sep='\t' , file=paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results_atend_new.txt") )
-#}
+
+
+message(paste0("memory in Mb: used, gc trigger, max used = ",data.frame(gc()[2,c(2,4,6)])))
+
+k <- fread(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results_new.txt"))
+blank <- c("cell","RSID")
+k <- subset(k, !RSID %in% blank)
+genes_inpeak <- peaks$NAME
+
+missing <- unique(subset(genes_inpeak, !V1 %in% k$NAME))
+present <- unique(subset(genes_inpeak, V1 %in% k$NAME))
+
+write.table(data.frame(missing=length(unique(missing$NAME)), present=length(unique(present$NAME))), quote=F , row.names=F , sep='\t' , file=paste0(DATA_PATH,SAMPLE_NAME,".genes_covered.txt") )
+
+message(paste0("genes missing in DeCAF: ",length(unique(missing$NAME))))
+message(paste0("genes present in DeCAF: ",length(unique(present$NAME))))
 
 
 
