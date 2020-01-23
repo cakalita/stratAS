@@ -108,14 +108,8 @@ cnv.all = read.table( opt$global_param , head=T ,as.is=T)
 #cnv.all.both = read.table( opt$global_param , head=T ,as.is=T)
 #cnv.all = cnv.all.both[grep("*[-]01A",cnv.all.both$ID),]
 #the following is just until params
-#samples file contains one sample ID per line 
-#bcftools query -l KIRC.ALL.AS.merged.fixed.vcf.gz > samples_KIRC.ALL.AS.merged.fixed.full.txt
-#next line subsets tumor samples from TCGA
-#less samples_KIRC.ALL.AS.merged.fixed.full.txt | grep '.*01A$' > samples_KIRC.ALL.AS.merged.fixed.01A.txt
-
 samples <- fread("../../agusevlab/ckal/TCGA_vcf/KIRC/stratas_prep_files/samples_KIRC.ALL.AS.merged.fixed.01A.txt", header=F)
 cnv.all <- cnv.all[cnv.all$ID %in% samples$V1,]
-
 
 if (DO.PHENO) {
 	phe = read.table( opt$samples , head=T , as.is=T)
@@ -287,7 +281,7 @@ RHO = RHO.ALL
 RHO[ RHO > MAX.RHO ] = NA
 
 if (DO.CELLSPECIFIC) {
-	gene = merge(peaks, gene_express, by="NAME")
+	gene = na.omit(merge(peaks, gene_express, by="NAME"))
 }
 
 COL.HEADER = c("CHR","POS","RSID","P0","P1","NAME","CENTER","N.HET","N.READS")
@@ -299,21 +293,16 @@ COL.HEADER.BBREG = c("C0.BBREG.P","C0.CNV.BBREG.P","C1.BBREG.P","C1.CNV.BBREG.P"
 COL.HEADER.BETABINOM = c("ALL.AF","ALL.BBINOM.P")
 
 HEAD = COL.HEADER
-#if ( DO.PHENO ) HEAD = c(COL.HEADER,COL.HEADER.PHENO)
-#if ( DO.BINOM ) HEAD = c(COL.HEADER,COL.HEADER.BINOM)
-#if ( DO.BBREG ) HEAD = c(COL.HEADER,COL.HEADER.BBREG)
-#if ( DO.INDIV ) HEAD = c(COL.HEADER,COL.HEADER.INDIV)
-#if ( DO.BETABINOM ) HEAD = c(COL.HEADER,COL.HEADER.BETABINOM)
-#cat( HEAD , sep='\t')
-#cat('\n')
 
 #for testing only
 if ( !is.na(opt$gene_name) ) {
-peaks = peaks[peaks$NAME==GENE_NAME,]
-gene = gene[gene$NAME==GENE_NAME,]
+	peaks = na.omit(peaks[peaks$NAME==GENE_NAME,])
+	gene = gene[gene$NAME==GENE_NAME,]
+} else {
+	peaks = na.omit(peaks)
 }
 for ( p in 1:nrow(peaks) ) {
-	message(paste0("Running ", p))
+	#message(paste0("Running ", p))
 	#p=1
 	#browser()
 	if (DO.CELLSPECIFIC) {
@@ -321,9 +310,6 @@ for ( p in 1:nrow(peaks) ) {
 		message(paste0("Running ", p, "=", gene[p,"NAME"]))
 	}
 	
-	#cur_peak <- subset(mat, V1==peaks$CHR[p])
-	#cur_peak <- dplyr::filter(cur_peak, between(cur_peak$V2, peaks$P0[p], peaks$P1[p]))
-	#cur <- ifelse(mat$V3 %in% cur_peak$V3, TRUE, FALSE)
 	cur = mat[,1] == peaks$CHR[p] & mat[,2] >= peaks$P0[p] & mat[,2] <= peaks$P1[p]
 
 	if(sum(cur) == 0 ) next()
@@ -371,7 +357,6 @@ for ( p in 1:nrow(peaks) ) {
 			cur.snp = mat[,1] == peaks$CHR[p] & mat[,2] >= peaks$CENTER[p] - PAR.WIN & mat[,2] <= peaks$CENTER[p] + PAR.WIN
 		}
 
-		#for ( s in which(cur.snp) ) {
 		snp_list <- lapply(which(cur.snp), function(s){
 		#s = 1
 		#s = 117694
@@ -397,7 +382,6 @@ for ( p in 1:nrow(peaks) ) {
 				
 				if (DO.CELLSPECIFIC) {
 				SNP_geno=GENO.H1[s,] + GENO.H2[s,]
-				#cell_pop_sub1=subset(cell_pop, sample_ID %in% IDS)
 				cell_pop_nodup <- cell_pop[!duplicated(cell_pop$sample_ID),]
 				cnv.ids <- data.frame(ID=cnv.all[,"ID"])
 				cell_pop_sub1 <- merge(cnv.ids, cell_pop_nodup, by.x="ID", by.y="sample_ID",all.x=T)
@@ -408,24 +392,26 @@ for ( p in 1:nrow(peaks) ) {
 				cell_types <- colnames(cell_pop_sub[,-1])
 				SNP <- SNP_geno[eqtl_IDset]
  				COVAR_sub <- COVAR[eqtl_IDset]
+				
 				lm_eqtl_vanilla = tryCatch(lm(Y.total.ind ~ SNP + COVAR_sub), error=function(e) NA)
-       				lm_eqtl_vanilla_df = as.data.frame(summary(lm_eqtl_vanilla)$coefficients)
+       				lm_eqtl_vanilla_df = tryCatch(as.data.frame(summary(lm_eqtl_vanilla)$coefficients), error=function(e) NA)
    				lm_eqtl_vanilla_interaction = tryCatch(lm_eqtl_vanilla_df["SNP",c(3,4)], error=function(e) data.frame(z_eqtl_vanilla=NA,eqtl_pval_vanilla=NA))
     				colnames(lm_eqtl_vanilla_interaction) <- c("z_eqtl_vanilla","eqtl_pval_vanilla")
     				z_eqtl_vanilla = data.frame(z_eqtl_vanilla=lm_eqtl_vanilla_interaction$z_eqtl_vanilla,eqtl_pval_vanilla=2*pnorm(-abs(lm_eqtl_vanilla_interaction$z_eqtl_vanilla)))
 				write.table(cbind(df_info,z_eqtl_vanilla, SAMPLE_NAME), quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".eqtl_vanilla_stratas_results.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".eqtl_vanilla_stratas_results.txt") )
+
 				eqtl_list <- lapply(cell_types, function(c){
 					#c=cell_types[1]
-       				#cf0_L <- cell_pop_sub[, ..c]
-       				#cf0 <- unname(unlist(cf0_L))
-       				cf0 <- cell_pop_sub[, c]
- 				lm_eqtl = tryCatch(lm(Y.total.ind ~ cf0*SNP + SNP + COVAR_sub), error=function(e) NA)
-       				lm_eqtl_df = as.data.frame(summary(lm_eqtl)$coefficients)
-   				lm_interaction = tryCatch(lm_eqtl_df["cf0:SNP",c(3,4)], error=function(e) data.frame(z_eqtl=NA,pval=NA))
-    				colnames(lm_interaction) <- c("z_eqtl","pval")
-    				z_eqtl = data.frame(cell=c, z_eqtl=lm_interaction$z_eqtl,z_eqtl_pval=2*pnorm(-abs(lm_interaction$z_eqtl)))
-				df <- cbind(df_info, z_eqtl)
-    				return(df)})
+       					#cf0_L <- cell_pop_sub[, ..c]
+       					#cf0 <- unname(unlist(cf0_L))
+       					cf0 <- cell_pop_sub[, c]
+ 					lm_eqtl = tryCatch(lm(Y.total.ind ~ cf0*SNP + SNP + COVAR_sub), error=function(e) NA)
+       					lm_eqtl_df = tryCatch(as.data.frame(summary(lm_eqtl)$coefficients), error=function(e) NA)
+   					lm_interaction = tryCatch(lm_eqtl_df["cf0:SNP",c(3,4)], error=function(e) data.frame(z_eqtl=NA,pval=NA))
+    					colnames(lm_interaction) <- c("z_eqtl","pval")
+    					z_eqtl = data.frame(cell=c, z_eqtl=lm_interaction$z_eqtl,z_eqtl_pval=2*pnorm(-abs(lm_interaction$z_eqtl)))
+					df <- cbind(df_info, z_eqtl)
+    					return(df)})
 				z_eqtl_df <- ldply(eqtl_list, data.frame)
 				#message(paste0(s,": eqtl test finished"))
  				}	
@@ -595,7 +581,6 @@ for ( p in 1:nrow(peaks) ) {
 			
 			if (DO.CELLSPECIFIC) {
 			if (DO.BBREG) {
-			#z_BBREG_df <- tryCatch(data.frame(z_BBREG_df), error=function(e) data.frame(RSID=paste(df_info$RSID), z_AI=NA,z_AI_pval=NA,cell=NA))
 			if (exists('z_BBREG_df') & exists('z_eqtl_df')){
 			sumQ <- merge(z_eqtl_df,z_BBREG_df, by=c("cell","RSID"),all=T)
 			} else if (exists('z_eqtl_df') & !exists('z_BBREG_df')) {
@@ -620,35 +605,32 @@ for ( p in 1:nrow(peaks) ) {
 	    		sumQ <- subset(sumQ[,-1], !is.na(z_comb))
 			#for QC while running uncomment
 			#cat("sumQ",sumQ$z_AI, sumQ$z_AI_pval, '\n' , sep='\t' )
-			write.table(sumQ, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results_new.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results.txt") )
+			write.table(sumQ, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results.txt") )
 			#message(paste0(s,": decaf test finished"))
-												# --- print individual counts
-				if ( DO.INDIV ) {
-				colnames(df_ind) <- COL.HEADER.INDIV
-				df <- cbind(sumQ, df_ind)
-				write.table(df, quote=F , row.names=F , sep='\t' , col.names=!file.exists(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg.ind_stratas_results.txt")) , append=TRUE, file=paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg.ind_stratas_results.txt") )
-				}
+			
 			}
 			}
 		})
 	}
+message(paste0(p,": test finished"))
 }
 
-
+rm(mat)
 message(paste0("memory in Mb: used, gc trigger, max used = ",data.frame(gc()[2,c(2,4,6)])))
 
-k <- fread(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results_new.txt"))
+if (DO.CELLSPECIFIC) {
+k <- fread(paste0(DATA_PATH,SAMPLE_NAME,".cfQTL.bbreg_stratas_results.txt"))
 blank <- c("cell","RSID")
 k <- subset(k, !RSID %in% blank)
-genes_inpeak <- peaks$NAME
+genes_inpeak <- data.frame(NAME=peaks$NAME)
 
-missing <- unique(subset(genes_inpeak, !V1 %in% k$NAME))
-present <- unique(subset(genes_inpeak, V1 %in% k$NAME))
+missing <- unique(subset(genes_inpeak, !NAME %in% k$NAME))
+present <- unique(subset(genes_inpeak, NAME %in% k$NAME))
 
 write.table(data.frame(missing=length(unique(missing$NAME)), present=length(unique(present$NAME))), quote=F , row.names=F , sep='\t' , file=paste0(DATA_PATH,SAMPLE_NAME,".genes_covered.txt") )
 
 message(paste0("genes missing in DeCAF: ",length(unique(missing$NAME))))
 message(paste0("genes present in DeCAF: ",length(unique(present$NAME))))
-
+} 
 
 
